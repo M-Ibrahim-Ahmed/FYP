@@ -1,23 +1,95 @@
-<!-- popup.html -->
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8" />
   <title>ScamShield</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <h2>ScamShield (Prototype)</h2>
-  <div id="status">Click "Refresh" after loading a page to show extracted items.</div>
-  <button id="refreshBtn">Refresh</button>
-  <h3>Extracted Links</h3>
-  <div id="links"></div>
-  <h3>Forms</h3>
-  <div id="forms"></div>
-  <h3>Images</h3>
-  <div id="images"></div>
-  <h3>Meta Redirects</h3>
-  <div id="meta"></div>
+  <!-- ─── Header ─── -->
+  <header class="header">
+    <div class="header-brand">
+      <img src="icons/icon48.png" alt="ScamShield" class="header-icon" />
+      <div>
+        <h1 class="header-title">ScamShield</h1>
+        <p class="header-subtitle">Real-Time URL Scanner</p>
+      </div>
+    </div>
+    <button id="scanBtn" class="scan-btn" title="Scan this page">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M13.5 2.5v4h-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M2.5 8a5.5 5.5 0 0 1 9.37-3.9L13.5 5.5M2.5 13.5v-4h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M13.5 8a5.5 5.5 0 0 1-9.37 3.9L2.5 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Scan Page
+    </button>
+  </header>
+
+  <!-- ─── Page Info ─── -->
+  <div class="page-info">
+    <p id="page-title" class="page-title">Loading…</p>
+    <p id="page-url" class="page-url"></p>
+  </div>
+
+  <!-- ─── Status Bar ─── -->
+  <div id="status" class="status status-loading">⏳ Loading…</div>
+
+  <!-- ─── Risk Banner ─── -->
+  <div id="risk-banner" class="risk-banner" style="display:none;">
+    <div class="risk-banner-left">
+      <span id="risk-label" class="risk-label"></span>
+      <span id="risk-score" class="risk-score-text"></span>
+    </div>
+    <span id="risk-details" class="risk-details"></span>
+  </div>
+
+  <!-- ─── Stats Bar ─── -->
+  <div class="stats-bar">
+    <div class="stat-item">
+      <span class="stat-value" id="stat-links">0</span>
+      <span class="stat-label">Links</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value" id="stat-forms">0</span>
+      <span class="stat-label">Forms</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value" id="stat-images">0</span>
+      <span class="stat-label">Images</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value" id="stat-redirects">0</span>
+      <span class="stat-label">Redirects</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value" id="stat-iframes">0</span>
+      <span class="stat-label">Iframes</span>
+    </div>
+  </div>
+
+  <!-- ─── Tab Bar ─── -->
+  <nav class="tab-bar">
+    <button class="tab-btn active" data-tab="links">🔗 Links</button>
+    <button class="tab-btn" data-tab="forms">📝 Forms</button>
+    <button class="tab-btn" data-tab="images">🖼️ Images</button>
+    <button class="tab-btn" data-tab="redirects">↪️ Redirects</button>
+    <button class="tab-btn" data-tab="iframes">📦 Iframes</button>
+  </nav>
+
+  <!-- ─── Tab Panels ─── -->
+  <div class="tab-content">
+    <div id="panel-links" class="tab-panel active"></div>
+    <div id="panel-forms" class="tab-panel"></div>
+    <div id="panel-images" class="tab-panel"></div>
+    <div id="panel-redirects" class="tab-panel"></div>
+    <div id="panel-iframes" class="tab-panel"></div>
+  </div>
+
+  <!-- ─── Footer ─── -->
+  <footer class="footer">
+    <span>ScamShield v1.0 — Phase 1</span>
+  </footer>
+
   <script src="popup.js"></script>
 </body>
 </html>

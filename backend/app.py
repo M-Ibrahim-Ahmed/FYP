@@ -1,11 +1,14 @@
 # app.py — ScamShield Flask Backend
 # 3-stage pipeline: Blacklist -> Heuristics -> ML Model
+# With MongoDB persistence, scan history, stats, and safe preview.
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from analyzer import analyze_page_data, classify_url
 from blacklist import BlacklistChecker
 from ml_predictor import MLPredictor
+from db import Database
+from safe_preview import SafePreview
 import os
 import time
 import logging
@@ -23,9 +26,17 @@ app = Flask(__name__)
 CORS(app)  # Allow requests from Chrome extension
 
 # ─── Initialize components ───
-blacklist_path = os.path.join(os.path.dirname(__file__), 'blacklist.csv')
-blacklist = BlacklistChecker(blacklist_path if os.path.exists(blacklist_path) else None)
-ml_model = MLPredictor()  # Loads rf_phishing_model.pkl automatically
+
+# Blacklist: use the user-provided CSV in the extension root directory
+blacklist_csv = os.path.join(os.path.dirname(__file__), '..', 'blacklist_dataset_cleaned (2).csv')
+if not os.path.exists(blacklist_csv):
+    # Fallback: check backend directory
+    blacklist_csv = os.path.join(os.path.dirname(__file__), 'blacklist.csv')
+blacklist = BlacklistChecker(blacklist_csv if os.path.exists(blacklist_csv) else None)
+
+ml_model = MLPredictor()       # Loads rf_phishing_model.pkl automatically
+db = Database()                # MongoDB connection (gracefully degrades)
+safe_preview = SafePreview()   # Selenium screenshot service
 
 
 def apply_ml_and_blacklist(item):
@@ -101,6 +112,10 @@ def recalculate_summary(results):
     return results
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# API ROUTES
+# ═══════════════════════════════════════════════════════════════════════════════
+
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint."""
@@ -110,6 +125,8 @@ def health():
         'version': '1.0',
         'blacklist_size': blacklist.size,
         'ml_model_loaded': ml_model.available,
+        'database_connected': db.is_available,
+        'safe_preview_available': safe_preview.is_available,
         'timestamp': time.time(),
     })
 
@@ -146,6 +163,11 @@ def analyze():
                     summary.get('safe', 0), summary.get('suspicious', 0),
                     summary.get('malicious', 0), summary.get('risk_score', 0))
 
+        # Persist to MongoDB (non-blocking — errors won't affect response)
+        scan_id = db.save_scan(results)
+        if scan_id:
+            results['scan_id'] = scan_id
+
         return jsonify(results)
     except Exception as e:
         logger.error('Analyze error: %s', str(e))
@@ -178,10 +200,59 @@ def check_single():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/history', methods=['GET'])
+def history():
+    """Get paginated scan history from MongoDB."""
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        per_page = min(per_page, 100)  # Cap at 100
+
+        result = db.get_history(page=page, per_page=per_page)
+        return jsonify(result)
+    except Exception as e:
+        logger.error('History error: %s', str(e))
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/stats', methods=['GET'])
+def stats():
+    """Get aggregate scan statistics from MongoDB."""
+    try:
+        result = db.get_stats()
+        return jsonify(result)
+    except Exception as e:
+        logger.error('Stats error: %s', str(e))
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/preview', methods=['POST'])
+def preview():
+    """Capture a safe screenshot of a suspicious URL using the sandboxed browser."""
+    try:
+        data = request.get_json()
+        if not data or 'url' not in data:
+            return jsonify({'error': 'Missing "url" field'}), 400
+
+        url = data['url']
+        timeout = data.get('timeout', 15)
+        logger.info('PREVIEW URL: %s', url[:80])
+
+        result = safe_preview.capture(url, timeout=timeout)
+        return jsonify(result)
+    except Exception as e:
+        logger.error('Preview error: %s', str(e))
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
-    print('=' * 50)
-    print('  ScamShield Backend Server')
-    print('  Running on http://localhost:5000')
-    print(f'  ML Model: {"Loaded" if ml_model.available else "Not available"}')
-    print('=' * 50)
+    print('=' * 55)
+    print('  🛡️  ScamShield Backend Server')
+    print('=' * 55)
+    print(f'  ML Model:     {"✅ Loaded" if ml_model.available else "❌ Not available"}')
+    print(f'  Blacklist:    {blacklist.size} entries')
+    print(f'  Database:     {"✅ Connected" if db.is_available else "⚠️  Not connected (running without DB)"}')
+    print(f'  Safe Preview: {"✅ Available" if safe_preview.is_available else "⚠️  Not available"}')
+    print(f'  Server:       http://localhost:5000')
+    print('=' * 55)
     app.run(host='0.0.0.0', port=5000, debug=True)

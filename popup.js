@@ -20,9 +20,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const riskLabel     = document.getElementById('risk-label');
   const riskScore     = document.getElementById('risk-score');
   const riskDetails   = document.getElementById('risk-details');
+  const previewOverlay = document.getElementById('preview-overlay');
+  const previewClose   = document.getElementById('preview-close');
+  const previewUrlEl   = document.getElementById('preview-url');
+  const previewBody    = document.getElementById('preview-body');
+  const exportBtn      = document.getElementById('exportBtn');
 
   let activeTabId = null;
   let activeTabUrl = null;
+  let currentScanData = null;  // Stores the latest scan data for export
   const BACKEND_URL = 'http://localhost:5000';
 
   // ─── Tab switching ───
@@ -33,6 +39,26 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.classList.add('active');
       const target = btn.dataset.tab;
       document.getElementById(`panel-${target}`).classList.add('active');
+    });
+  });
+
+  // ─── Safe preview overlay close ───
+  previewClose.addEventListener('click', () => {
+    previewOverlay.style.display = 'none';
+  });
+
+  // ─── Export button ───
+  exportBtn.addEventListener('click', () => exportCSV());
+
+  // ─── Tab switching (load history when History tab is clicked) ───
+  tabBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.tab;
+      tabBtns.forEach((b) => b.classList.remove('active'));
+      tabPanels.forEach((p) => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(`panel-${tab}`).classList.add('active');
+      if (tab === 'history') loadHistory();
     });
   });
 
@@ -50,7 +76,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // ─── Initialize: get active tab and request data ───
+  // ─── Initialize: get active tab and auto-scan ───
+  let pollTimer = null;
+  let pollCount = 0;
+  const MAX_POLLS = 15; // Poll up to 30 seconds (15 × 2s)
+
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs || tabs.length === 0) {
       setStatus('error');
@@ -61,11 +91,13 @@ document.addEventListener('DOMContentLoaded', () => {
     pageTitleEl.textContent = tabs[0].title || 'Unknown Page';
     pageUrlEl.textContent = truncate(activeTabUrl, 50);
     pageUrlEl.title = activeTabUrl;
-    requestScanData(activeTabId);
+
+    // Auto-scan: try to load existing data, if not analyzed yet start polling
+    requestScanData(activeTabId, true);
   });
 
   // ─── Request stored scan data from background ───
-  function requestScanData(tabId) {
+  function requestScanData(tabId, autoRetry) {
     setStatus('loading');
     chrome.runtime.sendMessage({ type: 'REQUEST_SCAN', tabId: String(tabId) }, (response) => {
       if (chrome.runtime.lastError) {
@@ -73,28 +105,65 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       const data = response?.data;
+
       if (!data) {
-        // No crawl data — page might be blocked by Chrome. Try analyzing the URL directly.
-        checkPageUrlDirectly(activeTabUrl);
+        if (autoRetry) {
+          // No data yet — trigger a crawl and start polling
+          setStatus('scanning');
+          chrome.runtime.sendMessage({ type: 'RE_CRAWL', tabId: activeTabId }, () => {
+            startPolling();
+          });
+        } else {
+          checkPageUrlDirectly(activeTabUrl);
+        }
         return;
       }
 
       const isAnalyzed = response?.analyzed === true;
       if (isAnalyzed) {
+        stopPolling();
         renderAnalyzedDashboard(data);
         setStatus('ready');
       } else if (data.backend_offline) {
+        stopPolling();
         renderRawDashboard(data);
         setStatus('offline');
       } else {
+        // Raw data available but not yet analyzed — show raw and keep polling
         renderRawDashboard(data);
-        setStatus('no-backend');
+        if (autoRetry && pollCount < MAX_POLLS) {
+          setStatus('scanning');
+          startPolling();
+        } else {
+          setStatus('no-backend');
+        }
       }
     });
   }
 
+  function startPolling() {
+    if (pollTimer) return; // Already polling
+    pollTimer = setInterval(() => {
+      pollCount++;
+      if (pollCount >= MAX_POLLS) {
+        stopPolling();
+        setStatus('no-backend');
+        return;
+      }
+      requestScanData(activeTabId, false);
+    }, 2000);
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
   // ─── Render: Analyzed dashboard (with risk scores from backend) ───
   function renderAnalyzedDashboard(data) {
+    currentScanData = data;  // Store for export
     const summary = data.summary || {};
 
     // Show risk banner
@@ -137,17 +206,50 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderAnalyzedLinks(links) {
     const panel = document.getElementById('panel-links');
     if (links.length === 0) { panel.innerHTML = emptyState('No links found.'); return; }
-    panel.innerHTML = links.map((item, i) => `
-      <div class="item-card card-${item.classification}" style="animation-delay:${i * 25}ms">
-        <div class="item-header">
-          <span class="item-icon">${riskIcon(item.classification)}</span>
-          <span class="item-title">${escapeHtml(item.text || '[no text]')}</span>
-          ${riskBadge(item.classification, item.risk_score)}
-          ${item.blacklisted?.is_blacklisted ? '<span class="badge badge-danger">BLACKLISTED</span>' : ''}
+
+    // Separate external and same-site links
+    const external = links.filter((l) => l.external !== false);
+    const sameSite = links.filter((l) => l.external === false);
+
+    let html = '';
+
+    // External links first (with full risk analysis)
+    if (external.length > 0) {
+      html += `<div class="item-meta" style="padding:6px 0 4px; color: var(--text-muted); font-size:10px; text-transform:uppercase; letter-spacing:0.5px;">🌐 External Links (${external.length})</div>`;
+      html += external.map((item, i) => `
+        <div class="item-card card-${item.classification}" style="animation-delay:${i * 25}ms">
+          <div class="item-header">
+            <span class="item-icon">${riskIcon(item.classification)}</span>
+            <span class="item-title">${escapeHtml(item.text || '[no text]')}</span>
+            ${riskBadge(item.classification, item.risk_score)}
+            ${item.blacklisted?.is_blacklisted ? '<span class="badge badge-danger">BLACKLISTED</span>' : ''}
+            ${item.classification !== 'safe' ? `<button class="btn-preview" data-url="${escapeAttr(item.url)}">🔍 Preview</button>` : ''}
+          </div>
+          <div class="item-url">${escapeHtml(truncate(item.url, 65))}</div>
         </div>
-        <div class="item-url">${escapeHtml(truncate(item.url, 65))}</div>
-      </div>
-    `).join('');
+      `).join('');
+    }
+
+    // Same-site links (auto-safe, collapsed)
+    if (sameSite.length > 0) {
+      html += `<div class="item-meta" style="padding:10px 0 4px; color: var(--text-muted); font-size:10px; text-transform:uppercase; letter-spacing:0.5px;">🏠 Same-Site Links (${sameSite.length}) — auto safe</div>`;
+      html += sameSite.slice(0, 10).map((item, i) => `
+        <div class="item-card card-safe" style="animation-delay:${(external.length + i) * 15}ms; opacity: 0.7">
+          <div class="item-header">
+            <span class="item-icon">🏠</span>
+            <span class="item-title">${escapeHtml(item.text || '[no text]')}</span>
+            <span class="badge badge-safe">same-site</span>
+          </div>
+          <div class="item-url">${escapeHtml(truncate(item.url, 65))}</div>
+        </div>
+      `).join('');
+      if (sameSite.length > 10) {
+        html += `<div class="item-meta" style="padding:4px 22px; color:var(--text-muted); font-size:10px;">+ ${sameSite.length - 10} more same-site links (all safe)</div>`;
+      }
+    }
+
+    panel.innerHTML = html;
+    attachPreviewListeners(panel);
   }
 
   function renderAnalyzedForms(forms) {
@@ -376,6 +478,55 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ═══ SAFE PREVIEW ═══
+
+  function attachPreviewListeners(container) {
+    container.querySelectorAll('.btn-preview').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const url = btn.dataset.url;
+        if (url) openSafePreview(url);
+      });
+    });
+  }
+
+  function openSafePreview(url) {
+    previewOverlay.style.display = 'flex';
+    previewUrlEl.textContent = url;
+    previewBody.innerHTML = '<div class="empty-state"><span class="empty-icon" style="animation: pulse 1.5s infinite">📸</span><p>Capturing safe screenshot…<br><small>This may take a few seconds</small></p></div>';
+
+    fetch(`${BACKEND_URL}/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, timeout: 15 }),
+    })
+      .then((res) => res.json())
+      .then((result) => {
+        if (result.success && result.screenshot_base64) {
+          previewBody.innerHTML = `
+            <img src="data:image/png;base64,${result.screenshot_base64}" alt="Safe preview of ${escapeAttr(url)}" class="preview-img" title="Click to expand" />
+            <div class="preview-info">
+              📄 ${escapeHtml(result.page_title || 'Untitled')}<br>
+              🔗 Final URL: ${escapeHtml(truncate(result.final_url || url, 60))}<br>
+              ⏱️ Loaded in ${result.load_time || '?'}s
+            </div>
+          `;
+          // Click image to toggle expanded view
+          const img = previewBody.querySelector('.preview-img');
+          if (img) {
+            img.addEventListener('click', () => img.classList.toggle('expanded'));
+          }
+        } else {
+          previewBody.innerHTML = `<div class="preview-error">❌ ${escapeHtml(result.error || 'Failed to capture preview')}</div>
+            <div class="preview-info">Make sure the backend server is running.</div>`;
+        }
+      })
+      .catch(() => {
+        previewBody.innerHTML = `<div class="preview-error">❌ Could not connect to backend</div>
+          <div class="preview-info">Make sure the backend is running on ${BACKEND_URL}</div>`;
+      });
+  }
+
   // ═══ HELPERS ═══
 
   function riskIcon(classification) {
@@ -408,11 +559,121 @@ document.addEventListener('DOMContentLoaded', () => {
     return div.innerHTML;
   }
 
+  function escapeAttr(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
   function truncate(str, max) {
     return str.length > max ? str.substring(0, max) + '…' : str;
   }
 
   function emptyState(message) {
     return `<div class="empty-state"><span class="empty-icon">📂</span><p>${message}</p></div>`;
+  }
+
+  // ═══ HISTORY TAB ═══
+
+  function loadHistory() {
+    const panel = document.getElementById('panel-history');
+    panel.innerHTML = '<div class="empty-state"><span class="empty-icon" style="animation: pulse 1.5s infinite">📊</span><p>Loading history…</p></div>';
+
+    // Fetch stats and history in parallel
+    Promise.all([
+      fetch(`${BACKEND_URL}/stats`).then((r) => r.json()),
+      fetch(`${BACKEND_URL}/history?per_page=10`).then((r) => r.json()),
+    ])
+      .then(([stats, history]) => {
+        let html = '';
+
+        // Stats overview
+        if (stats.available) {
+          const cls = stats.classifications || {};
+          html += `
+            <div class="stats-overview">
+              <div><div class="stat-big">${stats.total_scans || 0}</div><div class="stat-label-sm">Total Scans</div></div>
+              <div><div class="stat-big">${stats.total_urls_analyzed || 0}</div><div class="stat-label-sm">URLs Analyzed</div></div>
+              <div><div class="stat-big">${stats.blacklisted_urls || 0}</div><div class="stat-label-sm">Blacklisted</div></div>
+            </div>
+            <div class="stats-overview">
+              <div><div class="stat-big" style="color:var(--safe)">${cls.safe || 0}</div><div class="stat-label-sm">Safe</div></div>
+              <div><div class="stat-big" style="color:var(--warning)">${cls.suspicious || 0}</div><div class="stat-label-sm">Suspicious</div></div>
+              <div><div class="stat-big" style="color:var(--danger)">${cls.malicious || 0}</div><div class="stat-label-sm">Malicious</div></div>
+            </div>
+          `;
+        }
+
+        // Recent scans
+        const scans = history.scans || [];
+        if (scans.length === 0) {
+          html += '<div class="history-no-data">📂 No scan history yet.<br>Scan some pages to see history here.</div>';
+        } else {
+          html += '<div class="item-meta" style="padding:4px 0 6px; color:var(--text-muted); font-size:10px; text-transform:uppercase; letter-spacing:0.5px;">Recent Scans</div>';
+          scans.forEach((scan) => {
+            const s = scan.summary || {};
+            const riskClass = s.overall_risk || 'safe';
+            const time = scan.scanned_at ? new Date(scan.scanned_at).toLocaleString() : '';
+            html += `
+              <div class="history-card">
+                <div class="history-url">${escapeHtml(truncate(scan.page_url || 'Unknown', 60))}</div>
+                <div class="history-time">🕒 ${time}</div>
+                <div class="history-stats">
+                  <span class="badge badge-safe">✅ ${s.safe || 0} safe</span>
+                  <span class="badge badge-warn">⚠️ ${s.suspicious || 0} suspicious</span>
+                  <span class="badge badge-danger">🚫 ${s.malicious || 0} malicious</span>
+                  ${riskBadge(riskClass, s.risk_score || 0)}
+                </div>
+              </div>
+            `;
+          });
+          if (history.total > scans.length) {
+            html += `<div class="history-no-data">Showing ${scans.length} of ${history.total} scans</div>`;
+          }
+        }
+
+        panel.innerHTML = html;
+      })
+      .catch(() => {
+        panel.innerHTML = '<div class="history-no-data">❌ Could not load history.<br>Make sure the backend is running.</div>';
+      });
+  }
+
+  // ═══ EXPORT CSV ═══
+
+  function exportCSV() {
+    if (!currentScanData) {
+      alert('No scan data to export. Scan a page first.');
+      return;
+    }
+
+    const rows = [['Category', 'URL', 'Classification', 'Risk Score', 'Blacklisted', 'ML Prediction', 'ML Confidence', 'External']];
+
+    for (const category of ['links', 'forms', 'images', 'redirects', 'iframes']) {
+      const items = currentScanData[category] || [];
+      items.forEach((item) => {
+        rows.push([
+          category,
+          item.url || '',
+          item.classification || 'unknown',
+          item.risk_score ?? '',
+          item.blacklisted?.is_blacklisted ? 'YES' : 'NO',
+          item.ml?.ml_prediction || '',
+          item.ml?.ml_confidence ?? '',
+          item.external === false ? 'NO' : 'YES',
+        ]);
+      });
+    }
+
+    // Build CSV string
+    const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+
+    // Trigger download
+    const a = document.createElement('a');
+    a.href = url;
+    const hostname = new URL(currentScanData.page_url || 'https://unknown').hostname;
+    a.download = `scamshield_report_${hostname}_${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 });

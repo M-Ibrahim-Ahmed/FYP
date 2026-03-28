@@ -43,6 +43,10 @@ def apply_ml_and_blacklist(item):
     """Apply ML prediction and blacklist check to a single analyzed item.
     Pipeline: Blacklist (highest priority) → ML → Heuristics (fallback).
     """
+    # Skip ML/blacklist for same-site links (already classified safe by analyzer)
+    if not item.get('external', True):
+        return item
+
     url = item.get('url', '')
 
     # 1) Blacklist check (overrides everything)

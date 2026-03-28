@@ -74,6 +74,7 @@
     <button class="tab-btn" data-tab="images">🖼️ Images</button>
     <button class="tab-btn" data-tab="redirects">↪️ Redirects</button>
     <button class="tab-btn" data-tab="iframes">📦 Iframes</button>
+    <button class="tab-btn" data-tab="history">📊 History</button>
   </nav>
 
   <!-- ─── Tab Panels ─── -->
@@ -83,11 +84,27 @@
     <div id="panel-images" class="tab-panel"></div>
     <div id="panel-redirects" class="tab-panel"></div>
     <div id="panel-iframes" class="tab-panel"></div>
+    <div id="panel-history" class="tab-panel"></div>
+  </div>
+
+  <!-- ─── Safe Preview Overlay ─── -->
+  <div id="preview-overlay" class="preview-overlay" style="display:none;">
+    <div class="preview-modal">
+      <div class="preview-header">
+        <span class="preview-title">🔒 Safe Preview</span>
+        <button id="preview-close" class="preview-close">✕</button>
+      </div>
+      <div id="preview-url" class="preview-url"></div>
+      <div id="preview-body" class="preview-body">
+        <div class="empty-state"><span class="empty-icon">📸</span><p>Loading preview…</p></div>
+      </div>
+    </div>
   </div>
 
   <!-- ─── Footer ─── -->
   <footer class="footer">
-    <span>ScamShield v1.0 — Phase 1</span>
+    <span>ScamShield v1.0</span>
+    <button id="exportBtn" class="export-btn" title="Export scan report as CSV">📥 Export</button>
   </footer>
 
   <script src="popup.js"></script>

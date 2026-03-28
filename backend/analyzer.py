@@ -236,9 +236,24 @@ def analyze_page_data(page_data):
 
     # ─── Analyze links ───
     for link in page_data.get('links', []):
-        analysis = classify_url(link.get('href', ''))
+        href = link.get('href', '')
+        is_external = link.get('external', True)  # Default to external if flag missing
+
+        if is_external:
+            # External link → run full heuristic analysis
+            analysis = classify_url(href)
+        else:
+            # Same-site link → auto-classify as safe (no phishing risk)
+            analysis = {
+                'url': href,
+                'risk_score': 0,
+                'classification': 'safe',
+                'features': {'is_same_site': True},
+            }
+
         analysis['text'] = link.get('text', '')
         analysis['target'] = link.get('target', '')
+        analysis['external'] = is_external
         results['links'].append(analysis)
         all_scores.append(analysis['risk_score'])
 

@@ -77,7 +77,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ─── Send crawl data to backend for analysis ───
 async function sendToBackend(pageData) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const timeout = setTimeout(() => controller.abort(), 30000);
 
   try {
     const response = await fetch(`${BACKEND_URL}/analyze`, {

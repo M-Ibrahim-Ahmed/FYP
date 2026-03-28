@@ -16,6 +16,7 @@
     };
 
     // ─── 1) Extract Links (<a> tags) ───
+    const pageHost = location.hostname;
     const linkNodes = document.querySelectorAll('a[href]');
     const links = [];
     const seenLinks = new Set();
@@ -24,11 +25,21 @@
       const href = toAbsolute(a.getAttribute('href'));
       if (!href || seenLinks.has(href)) return;
       seenLinks.add(href);
+
+      // Flag link for analysis if it goes to a different domain OR opens in a new tab
+      const target = a.getAttribute('target') || '';
+      let external = false;
+      try {
+        const linkHost = new URL(href).hostname;
+        external = linkHost !== pageHost || target === '_blank';
+      } catch {}
+
       links.push({
         href,
         text: (a.innerText || '').trim().substring(0, 120) || '[no text]',
         rel: a.getAttribute('rel') || '',
         target: a.getAttribute('target') || '',
+        external,
       });
     });
 

@@ -3,7 +3,7 @@
   "name": "ScamShield",
   "version": "1.0",
   "description": "Real-Time Malicious URL Detection and Safe Browsing System. Scans webpages for phishing links, suspicious forms, hidden iframes, and redirects.",
-  "permissions": ["storage", "scripting", "activeTab", "tabs"],
+  "permissions": ["storage", "scripting", "activeTab", "tabs", "notifications"],
   "host_permissions": ["<all_urls>"],
   "icons": {
     "16": "icons/icon16.png",

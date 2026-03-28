@@ -110,6 +110,17 @@ function updateBadge(tabId, risk) {
   const c = config[risk] || config.offline;
   chrome.action.setBadgeText({ text: c.text, tabId });
   chrome.action.setBadgeBackgroundColor({ color: c.color, tabId });
+
+  // Trigger browser notification for malicious sites
+  if (risk === 'malicious') {
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: 'ScamShield Security Alert!',
+      message: 'Malicious content detected on this page. High risk of phishing!',
+      priority: 2
+    });
+  }
 }
 
 // ─── Clean up storage when a tab is closed ───

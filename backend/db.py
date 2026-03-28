@@ -13,10 +13,8 @@ except ImportError:
     HAS_MONGO = False
 
 # ─── Configuration ───
-MONGO_URI = os.environ.get(
-    'MONGO_URI',
-    'mongodb+srv://scamshield:ch.1ScamShield@scamshield.d60uuiz.mongodb.net/?appName=ScamShield'
-)
+# IMPORTANT: Never hardcode credentials. Use environment variables (e.g., in a .env file)
+MONGO_URI = os.environ.get('MONGO_URI', 'mongodb://localhost:27017')
 MONGO_DB = os.environ.get('MONGO_DB', 'scamshield')
 MONGO_TIMEOUT_MS = 5000  # 5s for cloud latency
 

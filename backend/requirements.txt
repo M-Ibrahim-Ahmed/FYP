@@ -8,3 +8,4 @@ pymongo>=4.6.0
 dnspython>=2.4.0
 selenium>=4.15.0
 Pillow>=10.0.0
+python-dotenv>=1.0.0

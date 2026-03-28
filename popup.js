@@ -34,11 +34,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // ─── Tab switching ───
   tabBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
+      const tab = btn.dataset.tab;
       tabBtns.forEach((b) => b.classList.remove('active'));
       tabPanels.forEach((p) => p.classList.remove('active'));
       btn.classList.add('active');
-      const target = btn.dataset.tab;
-      document.getElementById(`panel-${target}`).classList.add('active');
+      document.getElementById(`panel-${tab}`).classList.add('active');
+      if (tab === 'history') loadHistory();
     });
   });
 
@@ -49,18 +50,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ─── Export button ───
   exportBtn.addEventListener('click', () => exportCSV());
-
-  // ─── Tab switching (load history when History tab is clicked) ───
-  tabBtns.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const tab = btn.dataset.tab;
-      tabBtns.forEach((b) => b.classList.remove('active'));
-      tabPanels.forEach((p) => p.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById(`panel-${tab}`).classList.add('active');
-      if (tab === 'history') loadHistory();
-    });
-  });
 
   // ─── Scan button ───
   scanBtn.addEventListener('click', () => {

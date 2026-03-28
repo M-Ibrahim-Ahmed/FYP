@@ -4,6 +4,12 @@
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from dotenv import load_dotenv
+import os
+
+# Load environment variables from .env file
+load_dotenv()
+
 from analyzer import analyze_page_data, classify_url
 from blacklist import BlacklistChecker
 from ml_predictor import MLPredictor

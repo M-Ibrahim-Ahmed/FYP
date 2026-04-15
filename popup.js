@@ -196,9 +196,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const panel = document.getElementById('panel-links');
     if (links.length === 0) { panel.innerHTML = emptyState('No links found.'); return; }
 
+    // Filter out navigation/UI links (Google search chrome, same-page anchors, etc.)
+    const meaningful = links.filter((l) => !l.navigation);
+
     // Separate external and same-site links
-    const external = links.filter((l) => l.external !== false);
-    const sameSite = links.filter((l) => l.external === false);
+    const external = meaningful.filter((l) => l.external !== false);
+    const sameSite = meaningful.filter((l) => l.external === false);
+
+    // Update the link count to only show meaningful links
+    statLinks.textContent = meaningful.length;
 
     let html = '';
 
@@ -235,6 +241,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (sameSite.length > 10) {
         html += `<div class="item-meta" style="padding:4px 22px; color:var(--text-muted); font-size:10px;">+ ${sameSite.length - 10} more same-site links (all safe)</div>`;
       }
+    }
+
+    // Show how many navigation links were hidden
+    const hidden = links.length - meaningful.length;
+    if (hidden > 0) {
+      html += `<div class="item-meta" style="padding:8px 0 4px; color: var(--text-muted); font-size:9px; opacity:0.6;">🔇 ${hidden} navigation/UI links hidden</div>`;
     }
 
     panel.innerHTML = html;

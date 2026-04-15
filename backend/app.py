@@ -49,8 +49,8 @@ def apply_ml_and_blacklist(item):
     """Apply ML prediction and blacklist check to a single analyzed item.
     Pipeline: Blacklist (highest priority) → ML → Heuristics (fallback).
     """
-    # Skip ML/blacklist for same-site links (already classified safe by analyzer)
-    if not item.get('external', True):
+    # Skip ML/blacklist for same-site or navigation links (already classified safe)
+    if not item.get('external', True) or item.get('navigation', False):
         return item
 
     url = item.get('url', '')
@@ -257,12 +257,24 @@ def preview():
 
 if __name__ == '__main__':
     print('=' * 55)
-    print('  🛡️  ScamShield Backend Server')
+    print('  [*] ScamShield Backend Server')
     print('=' * 55)
-    print(f'  ML Model:     {"✅ Loaded" if ml_model.available else "❌ Not available"}')
+
+    # --- Automatic Docker Startup (Optional Enhancement for FYP) ---
+    # If docker-compose exists, try to start Selenium in the background
+    try:
+        import subprocess
+        print('  [Docker] Checking for Docker services...')
+        subprocess.Popen(['docker-compose', 'up', '-d', 'selenium'], 
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print('  [Docker] Attempting background start (Selenium sandbox)...')
+    except Exception:
+        print('  [Docker] Docker not available locally. Using remote fallback.')
+
+    print(f'  ML Model:     {"[OK] Loaded" if ml_model.available else "[X] Not available"}')
     print(f'  Blacklist:    {blacklist.size} entries')
-    print(f'  Database:     {"✅ Connected" if db.is_available else "⚠️  Not connected (running without DB)"}')
-    print(f'  Safe Preview: {"✅ Available" if safe_preview.is_available else "⚠️  Not available"}')
+    print(f'  Database:     {"[OK] Connected" if db.is_available else "[!] Not connected (running without DB)"}')
+    print(f'  Safe Preview: {"[OK] Available" if safe_preview.is_available else "[!] Not available"}')
     print(f'  Server:       http://localhost:5000')
     print('=' * 55)
     app.run(host='0.0.0.0', port=5000, debug=True)

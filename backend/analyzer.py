@@ -238,22 +238,24 @@ def analyze_page_data(page_data):
     for link in page_data.get('links', []):
         href = link.get('href', '')
         is_external = link.get('external', True)  # Default to external if flag missing
+        is_navigation = link.get('navigation', False)
 
-        if is_external:
-            # External link → run full heuristic analysis
-            analysis = classify_url(href)
-        else:
-            # Same-site link → auto-classify as safe (no phishing risk)
+        if is_navigation or not is_external:
+            # Navigation/UI link or same-site link → auto-classify as safe
             analysis = {
                 'url': href,
                 'risk_score': 0,
                 'classification': 'safe',
-                'features': {'is_same_site': True},
+                'features': {'is_same_site': not is_external, 'is_navigation': is_navigation},
             }
+        else:
+            # External link → run full heuristic analysis
+            analysis = classify_url(href)
 
         analysis['text'] = link.get('text', '')
         analysis['target'] = link.get('target', '')
         analysis['external'] = is_external
+        analysis['navigation'] = is_navigation
         results['links'].append(analysis)
         all_scores.append(analysis['risk_score'])
 

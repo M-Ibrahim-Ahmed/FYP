@@ -25,6 +25,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         chrome.storage.local.set({ [scanKey]: analysisResult });
         // Update badge based on overall risk
         updateBadge(Number(tabId), analysisResult.summary?.overall_risk);
+        // Send results BACK to the content script for in-page indicators
+        chrome.tabs.sendMessage(Number(tabId), {
+          type: 'SCAN_RESULT',
+          payload: analysisResult,
+        }).catch(() => {}); // Ignore if tab closed
       })
       .catch((err) => {
         console.warn('[ScamShield] Backend unavailable, using raw data:', err.message);

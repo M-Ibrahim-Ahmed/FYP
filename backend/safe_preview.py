@@ -31,7 +31,7 @@ except ImportError:
 
 # ─── Configuration ───
 SELENIUM_REMOTE_URL = os.environ.get('SELENIUM_REMOTE_URL', 'http://localhost:4444/wd/hub')
-PREVIEW_TIMEOUT = int(os.environ.get('PREVIEW_TIMEOUT', '15'))
+PREVIEW_TIMEOUT = int(os.environ.get('PREVIEW_TIMEOUT', '25'))
 SCREENSHOT_WIDTH = 1280
 SCREENSHOT_HEIGHT = 900
 
@@ -57,9 +57,9 @@ class SafePreview:
             self._docker_available = self._check_docker_selenium()
 
         if self._docker_available:
-            logger.info('[SafePreview] ✅ Docker Selenium sandbox connected (%s)', SELENIUM_REMOTE_URL)
+            logger.info('[SafePreview] Docker Selenium sandbox connected (%s)', SELENIUM_REMOTE_URL)
         else:
-            logger.info('[SafePreview] ⚠️ Docker Selenium not available — using remote API fallback')
+            logger.info('[SafePreview] Docker Selenium not available -- using remote API fallback')
 
     def _check_docker_selenium(self):
         """Quick check if Docker Selenium is reachable."""
@@ -93,13 +93,29 @@ class SafePreview:
 
         # Method 2: Remote screenshot API (fallback)
         if HAS_URLLIB:
-            result = self._capture_via_api(url, timeout)
-            if result['success']:
-                return result
+            # Try up to 2 times for the API (if first one times out)
+            for attempt in range(2):
+                result = self._capture_via_api(url, timeout)
+                if result['success']:
+                    return result
+                
+                if 'timed out' not in str(result.get('error', '')).lower():
+                    break # Don't retry for non-timeout errors
+                
+                if attempt == 0:
+                    logger.warning('[SafePreview] API timed out, retrying once...')
+                    time.sleep(1)
+            
+            # If we're here, all API attempts failed
+            return {
+                'success': False,
+                'error': f"Safe preview failed. (Error: {result.get('error')}). " 
+                         "The site might be slow. Try again or start Docker for a better experience."
+            }
 
         return {
             'success': False,
-            'error': 'Could not capture preview. Start Docker with: docker-compose up',
+            'error': 'Safe preview unavailable. (urllib/selenium missing)',
         }
 
     def _capture_via_selenium(self, url, timeout):
@@ -177,8 +193,15 @@ class SafePreview:
                 'load_time': elapsed,
                 'method': 'remote_api',
             }
+        except urllib.error.HTTPError as e:
+            logger.error('[SafePreview] API HTTP Error: %s', e.code)
+            return {'success': False, 'error': f'Remote API error: HTTP {e.code}'}
+        except urllib.error.URLError as e:
+            logger.error('[SafePreview] API URL Error: %s', e.reason)
+            return {'success': False, 'error': f'Remote API unreachable: {e.reason}'}
         except Exception as e:
-            return {'success': False, 'error': f'API error: {str(e)[:150]}'}
+            logger.error('[SafePreview] API Unknown Error: %s', str(e))
+            return {'success': False, 'error': f'API error: {str(e) or "Unknown error"}'}
 
     @property
     def is_available(self):

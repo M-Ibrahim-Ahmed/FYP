@@ -1,49 +1,42 @@
 # docker-compose.yml — ScamShield Services
-# Starts: Flask backend, MongoDB, and Selenium Chrome for safe preview
-
-version: '3.8'
+# Starts: Flask backend + Selenium Chrome for Safe Preview
+# Usage: docker compose up --build -d
 
 services:
   # ─── Flask Backend ───
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "5000:5000"
     environment:
-      - MONGO_URI=mongodb://mongo:27017
-      - MONGO_DB=scamshield
       - SELENIUM_REMOTE_URL=http://selenium:4444/wd/hub
-    volumes:
-      - ./rf_phishing_model.pkl:/app/rf_phishing_model.pkl:ro
-      - ./blacklist_dataset_cleaned (2).csv:/app/blacklist_dataset_cleaned (2).csv:ro
-      - ./url_features_extracted1.csv:/app/url_features_extracted1.csv:ro
     depends_on:
-      - mongo
-      - selenium
+      selenium:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
-  # ─── MongoDB ───
-  mongo:
-    image: mongo:7
-    ports:
-      - "27017:27017"
-    volumes:
-      - scamshield_mongo_data:/data/db
-    restart: unless-stopped
-
-  # ─── Selenium Chrome (for Safe Preview) ───
+  # ─── Selenium Chrome (for Safe Preview sandbox) ───
   selenium:
     image: selenium/standalone-chrome:latest
     ports:
       - "4444:4444"
-      - "7900:7900"   # noVNC (optional — browser debug view at http://localhost:7900)
+      - "7900:7900"   # noVNC — view sandbox browser at http://localhost:7900 (pass: secret)
     shm_size: "2g"
     environment:
       - SE_NODE_MAX_SESSIONS=3
       - SE_NODE_OVERRIDE_MAX_SESSIONS=true
     restart: unless-stopped
-
-volumes:
-  scamshield_mongo_data:
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4444/wd/hub/status"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s

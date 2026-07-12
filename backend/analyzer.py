@@ -25,12 +25,34 @@ SUSPICIOUS_TLDS = [
 ]
 
 TRUSTED_DOMAINS = [
-    'google.com', 'youtube.com', 'facebook.com', 'twitter.com', 'x.com',
-    'instagram.com', 'linkedin.com', 'github.com', 'stackoverflow.com',
-    'microsoft.com', 'apple.com', 'amazon.com', 'wikipedia.org',
-    'reddit.com', 'netflix.com', 'whatsapp.com', 'yahoo.com',
-    'bing.com', 'zoom.us', 'dropbox.com', 'medium.com',
-    'cloudflare.com', 'mozilla.org', 'python.org', 'npmjs.com',
+    # Search Engines
+    'google.com', 'bing.com', 'yahoo.com', 'duckduckgo.com', 'baidu.com',
+    # Social Media
+    'facebook.com', 'twitter.com', 'x.com', 'instagram.com', 'linkedin.com',
+    'reddit.com', 'pinterest.com', 'tumblr.com', 'tiktok.com', 'snapchat.com',
+    'discord.com', 'discord.gg', 'whatsapp.com', 'telegram.org',
+    # Tech / Dev
+    'github.com', 'gitlab.com', 'bitbucket.org', 'stackoverflow.com',
+    'stackexchange.com', 'npmjs.com', 'pypi.org', 'docker.com',
+    'digitalocean.com', 'heroku.com', 'vercel.com', 'netlify.com',
+    # Major Companies
+    'microsoft.com', 'apple.com', 'amazon.com', 'netflix.com', 'spotify.com',
+    'adobe.com', 'salesforce.com', 'oracle.com', 'ibm.com', 'intel.com',
+    'samsung.com', 'paypal.com', 'stripe.com', 'shopify.com', 'ebay.com',
+    # Cloud / Infrastructure
+    'cloudflare.com', 'amazonaws.com', 'azure.com', 'googleapis.com',
+    'googleusercontent.com', 'gstatic.com', 'akamai.com', 'fastly.com',
+    # Content / Media
+    'youtube.com', 'youtu.be', 'vimeo.com', 'twitch.tv', 'medium.com',
+    'wordpress.com', 'wordpress.org', 'blogger.com', 'substack.com',
+    # Education / Reference
+    'wikipedia.org', 'wikimedia.org', 'archive.org', 'w3.org',
+    'mozilla.org', 'python.org', 'nodejs.org', 'rust-lang.org',
+    # Productivity
+    'zoom.us', 'slack.com', 'notion.so', 'trello.com', 'atlassian.com',
+    'dropbox.com', 'box.com', 'drive.google.com',
+    # News
+    'bbc.com', 'cnn.com', 'nytimes.com', 'reuters.com', 'theguardian.com',
 ]
 
 

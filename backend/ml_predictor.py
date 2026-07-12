@@ -45,15 +45,17 @@ class MLPredictor:
             print('[ScamShield ML] joblib not installed — ML predictions disabled')
             return
 
-        # Default model path
+        # Default model path — check multiple locations
         if model_path is None:
-            model_path = os.path.join(
-                os.path.dirname(os.path.dirname(__file__)),
-                'rf_phishing_model.pkl'
-            )
-            # Also check in the backend directory
-            if not os.path.exists(model_path):
-                model_path = os.path.join(os.path.dirname(__file__), '..', 'rf_phishing_model.pkl')
+            candidates = [
+                # Parent directory (local dev: backend/../rf_phishing_model.pkl)
+                os.path.join(os.path.dirname(os.path.dirname(__file__)), 'rf_phishing_model.pkl'),
+                # Same directory as this file (Docker: /app/rf_phishing_model.pkl)
+                os.path.join(os.path.dirname(__file__), 'rf_phishing_model.pkl'),
+                # Current working directory
+                os.path.join(os.getcwd(), 'rf_phishing_model.pkl'),
+            ]
+            model_path = next((p for p in candidates if os.path.exists(p)), candidates[0])
 
         model_path = os.path.abspath(model_path)
 

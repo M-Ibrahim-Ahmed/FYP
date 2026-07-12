@@ -1,0 +1,212 @@
+
+=================================================================
+  ScamShield - Performance Benchmark Report
+=================================================================
+  Date: 2026-05-14 11:47:54
+  System: nt / Python 3.10.11
+
+=================================================================
+  1. Dataset Overview
+=================================================================
+  Dataset:          url_features_extracted1.csv
+  Total Samples:    101,218
+  Phishing (0):     63,678 (62.9%)
+  Benign (1):       37,540 (37.1%)
+  Features:         16
+  Feature Names:    url_length, has_ip_address, dot_count, https_flag, url_entropy, token_count, subdomain_count, query_param_count, tld_length, path_length, has_hyphen_in_domain, number_of_digits, tld_popularity, suspicious_file_extension, domain_name_length, percentage_numeric_chars
+
+=================================================================
+  2. Model Information
+=================================================================
+  Algorithm:        Random Forest
+  N Estimators:     200
+  Max Depth:        None
+  Min Samples Split:2
+  Min Samples Leaf: 1
+  Class Weight:     None
+  N Features:       16
+  Model Size:       4.45 MB
+  Train Set:        80,974
+  Test Set:         20,244
+
+=================================================================
+  3. Classification Performance (Test Set)
+=================================================================
+
+  +────────────────────+────────────+────────────+────────────+
+  | Metric             |   Phishing |     Benign |    Overall |
+  +────────────────────+────────────+────────────+────────────+
+  | Precision          |     99.98% |     99.99% |     99.99% |
+  | Recall             |     99.99% |     99.97% |     99.99% |
+  | F1-Score           |     99.99% |     99.98% |     99.99% |
+  +────────────────────+────────────+────────────+────────────+
+  | Accuracy           |            |            |     99.99% |
+  | AUC-ROC            |            |            |    100.00% |
+  +────────────────────+────────────+────────────+────────────+
+
+  Confusion Matrix:
+                      Predicted
+                  Phishing  Benign
+  Actual Phishing  12,735       1
+  Actual Benign         2   7,506
+
+  True Positives (TP):   12,735
+  False Negatives (FN):  1  (Missed phishing)
+  False Positives (FP):  2  (Safe flagged as phishing)
+  True Negatives (TN):   7,506
+
+=================================================================
+  4. Processing Time Benchmark
+=================================================================
+  Single URL Prediction (100 samples):
+    Average:    87.315 ms
+    Median:     83.056 ms
+    P95:        114.412 ms
+    P99:        142.629 ms
+
+  Batch Prediction:
+  +────────────+───────────────+──────────────────+───────────────+
+  | Batch Size |    Total Time |          Per URL |      URLs/sec |
+  +────────────+───────────────+──────────────────+───────────────+
+  |        100 |      83.16 ms |        0.8316 ms |      1,202/s |
+  |        500 |     109.28 ms |        0.2186 ms |      4,576/s |
+  |      1,000 |     106.35 ms |        0.1064 ms |      9,403/s |
+  |      5,000 |     193.73 ms |        0.0387 ms |     25,809/s |
+  +────────────+───────────────+──────────────────+───────────────+
+
+  End-to-End Response Time (500 real URLs from dataset):
+  (raw URL -> feature extraction -> ML prediction -> result)
+    Average Response Time:  80.827 ms
+    Median Response Time:   78.352 ms
+    P95 Response Time:      100.321 ms
+    P99 Response Time:      138.440 ms
+    Min Response Time:      66.700 ms
+    Max Response Time:      213.124 ms
+
+  Time Breakdown:
+    Feature Extraction:     0.159 ms (0.2%)
+    ML Prediction:          80.668 ms (99.8%)
+
+=================================================================
+  5. Resource Usage
+=================================================================
+  Memory Usage:
+    Process RSS:        213.2 MB
+    Process VMS:        628.8 MB
+    Python Tracked:     57.6 MB
+    Python Peak:        62.8 MB
+    Model File Size:    4.45 MB
+
+  CPU Stress Test (101,220 predictions, back-to-back):
+    Avg CPU (this process): 95.2%
+    Peak CPU (this process):116.4%
+    System CPU Cores:       8
+    Actual System Load:     11.9% of total capacity
+    Wall Time:              2399 ms
+    Throughput:             42,200 URLs/sec
+    NOTE: >100% means multiple cores used (Random Forest parallelism)
+
+  Real-World Usage (single page scan, 30 URLs):
+    CPU Usage:              74.8%
+    System Load:            9.3% of total capacity
+    Processing Time:        105.3 ms
+    NOTE: Typical page scan uses negligible CPU for <1 second
+
+=================================================================
+  6. Feature Importance Ranking
+=================================================================
+  +──────+────────────────────────────+──────────────+────────────+
+  | Rank | Feature                    |   Importance |     Cumul. |
+  +──────+────────────────────────────+──────────────+────────────+
+  |    1 | path_length                |      0.3591 |      35.9% |
+  |    2 | token_count                |      0.1740 |      53.3% |
+  |    3 | number_of_digits           |      0.1215 |      65.5% |
+  |    4 | https_flag                 |      0.1140 |      76.9% |
+  |    5 | percentage_numeric_chars   |      0.1120 |      88.1% |
+  |    6 | dot_count                  |      0.0380 |      91.9% |
+  |    7 | subdomain_count            |      0.0212 |      94.0% |
+  |    8 | has_ip_address             |      0.0208 |      96.1% |
+  |    9 | domain_name_length         |      0.0160 |      97.7% |
+  |   10 | url_length                 |      0.0132 |      99.0% |
+  |   11 | tld_length                 |      0.0040 |      99.4% |
+  |   12 | url_entropy                |      0.0037 |      99.7% |
+  |   13 | suspicious_file_extension  |      0.0014 |      99.9% |
+  |   14 | tld_popularity             |      0.0010 |     100.0% |
+  |   15 | has_hyphen_in_domain       |      0.0002 |     100.0% |
+  |   16 | query_param_count          |      0.0000 |     100.0% |
+  +──────+────────────────────────────+──────────────+────────────+
+
+=================================================================
+  7. Real-World URL Evaluation
+=================================================================
+  Testing with FULL PIPELINE (Heuristic + ML + Blacklist + Whitelist)
+  This reflects actual ScamShield behavior in production.
+
+  +───────────────────────────────────────────────────────+──────────+──────────+────────────+────────+
+  | URL                                                   | Expected |  ML Only |  Full Pipe |  Match |
+  +───────────────────────────────────────────────────────+──────────+──────────+────────────+────────+
+  | https://www.google.com/                               |     safe |     safe |       safe |   [OK] |
+  | https://github.com/trending                           |     safe | malicious |       safe |   [OK] |
+  | https://www.youtube.com/watch?v=dQw4w9WgXcQ           |     safe |     safe |       safe |   [OK] |
+  | https://stackoverflow.com/questions                   |     safe | malicious |       safe |   [OK] |
+  | https://www.wikipedia.org/                            |     safe |     safe |       safe |   [OK] |
+  | https://www.amazon.com/                               |     safe |     safe |       safe |   [OK] |
+  | https://docs.python.org/3/                            |     safe | malicious |       safe |   [OK] |
+  | https://www.linkedin.com/feed/                        |     safe |     safe |       safe |   [OK] |
+  | https://www.reddit.com/                               |     safe |     safe |       safe |   [OK] |
+  | https://www.netflix.com/                              |     safe |     safe |       safe |   [OK] |
+  | http://192.168.1.1/paypal-login/secure/account        | phishing | malicious |  malicious |   [OK] |
+  | http://update-your-bank-account-now.xyz/login.php     | phishing | malicious |  malicious |   [OK] |
+  | http://free-prize-winner-2025.tk/claim                | phishing | malicious |  malicious |   [OK] |
+  | http://secure-verify-paypal.com.suspicious-domain.tk/ | phishing | malicious |  malicious |   [OK] |
+  | http://apple-id-verify-support.cf/signin              | phishing | malicious |  malicious |   [OK] |
+  | http://facebook-login-secure.gq/password-reset        | phishing | malicious |  malicious |   [OK] |
+  | http://netflix-billing-update.ml/account/verify       | phishing | malicious |  malicious |   [OK] |
+  | http://microsoft-alert-security.pw/urgent             | phishing | malicious |  malicious |   [OK] |
+  | http://amazon-order-confirm.buzz/tracking?id=838291   | phishing | malicious | suspicious |   [OK] |
+  | https://bit.ly/3xSu5pq                                | phishing | malicious |  malicious |   [OK] |
+  +───────────────────────────────────────────────────────+──────────+──────────+────────────+────────+
+  ML-Only Accuracy:    17/20 (85.0%)
+  Full Pipeline Accuracy: 20/20 (100.0%)
+
+  NOTE: The full pipeline uses trusted domain whitelisting and
+  blended scoring (60% heuristic + 40% ML) to eliminate ML
+  false positives on known-good domains like GitHub, StackOverflow.
+
+=================================================================
+  8. Comparison with Base Paper (Template)
+=================================================================
+  Fill in your base paper values in the "Base Paper" column.
+  If you find other papers using the same dataset, add columns.
+
+  +─────────────────────────+───────────────+───────────────+───────────────+
+  | Metric                  |    ScamShield |    Base Paper |       Paper 2 |
+  +─────────────────────────+───────────────+───────────────+───────────────+
+  | Accuracy                |        99.99% |           --- |           --- |
+  | Precision (Weighted)    |        99.99% |           --- |           --- |
+  | Recall (Weighted)       |        99.99% |           --- |           --- |
+  | F1-Score (Weighted)     |        99.99% |           --- |           --- |
+  | AUC-ROC                 |       100.00% |           --- |           --- |
+  | Response Time (ms)      |     80.827 ms |           --- |           --- |
+  | Model Size              |       4.45 MB |           --- |           --- |
+  | Memory Usage            |     213.2 MB |           --- |           --- |
+  | Features Used           |            16 |           --- |           --- |
+  | Training Samples        |        80,974 |           --- |           --- |
+  | Algorithm               | Random Forest |           --- |           --- |
+  +─────────────────────────+───────────────+───────────────+───────────────+
+
+=================================================================
+  9. Summary
+=================================================================
+  ScamShield achieves 99.99% accuracy on a dataset of
+  101,218 URLs (63,678 phishing, 37,540 benign).
+
+  Key Highlights:
+    - F1-Score:               99.99%
+    - AUC-ROC:                100.00%
+    - Response Time:          80.827 ms per URL
+    - Throughput:             42,200 URLs/second
+    - Memory footprint:       213.2 MB
+    - Real-world accuracy:    100.0%
+
+  Full report saved to: C:\ScamSheild\extension\backend\benchmark_results.txt

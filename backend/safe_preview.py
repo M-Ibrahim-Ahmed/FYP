@@ -36,7 +36,10 @@ SCREENSHOT_WIDTH = 1280
 SCREENSHOT_HEIGHT = 900
 
 # Fallback remote screenshot API (free, no key needed)
-THUM_IO_URL = 'https://image.thum.io/get/width/{w}/crop/{h}/noanimate/{url}'
+# Normal: /wait/5 = wait 5 seconds for page render (leverages thum.io cache for speed)
+# Fresh:  /wait/8/maxAge/0 = force fresh capture when we suspect stale cache
+THUM_IO_URL       = 'https://image.thum.io/get/width/{w}/crop/{h}/wait/5/noanimate/{url}'
+THUM_IO_URL_FRESH = 'https://image.thum.io/get/width/{w}/crop/{h}/wait/8/maxAge/0/noanimate/{url}'
 
 
 class SafePreview:
@@ -93,23 +96,22 @@ class SafePreview:
 
         # Method 2: Remote screenshot API (fallback)
         if HAS_URLLIB:
-            # Try up to 2 times for the API (if first one times out)
-            for attempt in range(2):
-                result = self._capture_via_api(url, timeout)
+            # Attempt 1: Normal request (uses thum.io cache — fast for repeat URLs)
+            result = self._capture_via_api(url, timeout, force_fresh=False)
+            if result['success']:
+                return result
+
+            # Attempt 2: If first attempt failed (timeout/error), try with fresh capture
+            if 'timed out' in str(result.get('error', '')).lower():
+                logger.warning('[SafePreview] API timed out, retrying with fresh capture...')
+                time.sleep(1)
+                result = self._capture_via_api(url, timeout, force_fresh=True)
                 if result['success']:
                     return result
-                
-                if 'timed out' not in str(result.get('error', '')).lower():
-                    break # Don't retry for non-timeout errors
-                
-                if attempt == 0:
-                    logger.warning('[SafePreview] API timed out, retrying once...')
-                    time.sleep(1)
-            
-            # If we're here, all API attempts failed
+
             return {
                 'success': False,
-                'error': f"Safe preview failed. (Error: {result.get('error')}). " 
+                'error': f"Safe preview failed. (Error: {result.get('error')}). "
                          "The site might be slow. Try again or start Docker for a better experience."
             }
 
@@ -117,6 +119,124 @@ class SafePreview:
             'success': False,
             'error': 'Safe preview unavailable. (urllib/selenium missing)',
         }
+
+    def _wait_for_page_ready(self, driver, timeout):
+        """Wait for the page to be fully loaded and rendered.
+        
+        Strategy:
+          0. Detect and wait for Cloudflare/bot-check challenge pages
+          1. Wait for document.readyState == 'complete'
+          2. Wait for network activity to settle (no pending XHR/fetch)
+          3. Extra settle time for JS-rendered content (lazy images, SPAs)
+        """
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+
+        # 0) Detect Cloudflare / bot-check challenge pages and wait for them to pass
+        challenge_detect_script = """
+            return (function() {
+                var body = document.body ? document.body.innerText : '';
+                var title = document.title || '';
+                // Common challenge page indicators
+                var patterns = [
+                    'checking your browser',
+                    'just a moment',
+                    'please wait',
+                    'verifying you are human',
+                    'verify you are human',
+                    'ddos protection',
+                    'attention required',
+                    'enable javascript and cookies',
+                    'ray id',
+                    'performing browser checks',
+                    'access denied'
+                ];
+                var combined = (body + ' ' + title).toLowerCase();
+                for (var i = 0; i < patterns.length; i++) {
+                    if (combined.indexOf(patterns[i]) !== -1) return true;
+                }
+                // Cloudflare turnstile / challenge iframe
+                if (document.querySelector('iframe[src*="challenges.cloudflare.com"]')) return true;
+                if (document.querySelector('#challenge-running, #challenge-form, .cf-browser-verification')) return true;
+                return false;
+            })();
+        """
+        try:
+            is_challenge = driver.execute_script(challenge_detect_script)
+            if is_challenge:
+                logger.info('[SafePreview] Challenge page detected (Cloudflare/bot-check), waiting for it to resolve...')
+                # Wait up to 15 seconds for the challenge to complete
+                challenge_deadline = time.time() + min(15, timeout - 3)
+                while time.time() < challenge_deadline:
+                    time.sleep(2)
+                    still_challenge = driver.execute_script(challenge_detect_script)
+                    if not still_challenge:
+                        logger.info('[SafePreview] Challenge resolved!')
+                        # After challenge resolves, wait a bit for the real page to load
+                        time.sleep(3)
+                        break
+                else:
+                    logger.warning('[SafePreview] Challenge did not resolve in time, capturing anyway')
+        except Exception:
+            logger.warning('[SafePreview] Challenge detection failed, continuing...')
+
+        # 1) Wait for document.readyState == 'complete'
+        try:
+            WebDriverWait(driver, timeout).until(
+                lambda d: d.execute_script('return document.readyState') == 'complete'
+            )
+            logger.info('[SafePreview] document.readyState = complete')
+        except Exception:
+            logger.warning('[SafePreview] Timed out waiting for readyState, continuing...')
+
+        # 2) Wait for network idle — poll until no new resources are being fetched
+        #    Uses the Performance API to detect in-flight requests
+        network_idle_script = """
+            return (function() {
+                // Check if there are pending XHR/fetch requests
+                if (window.performance) {
+                    var entries = window.performance.getEntriesByType('resource');
+                    var now = Date.now();
+                    var pending = entries.filter(function(e) {
+                        return e.responseEnd === 0;  // Still loading
+                    });
+                    return pending.length === 0;
+                }
+                return true;
+            })();
+        """
+        try:
+            # Poll for up to 8 seconds for network idle
+            idle_deadline = time.time() + min(8, timeout - 2)
+            while time.time() < idle_deadline:
+                is_idle = driver.execute_script(network_idle_script)
+                if is_idle:
+                    logger.info('[SafePreview] Network idle detected')
+                    break
+                time.sleep(0.5)
+        except Exception:
+            logger.warning('[SafePreview] Network idle check failed, continuing...')
+
+        # 3) Extra settle time for JS-rendered content (React, lazy images, animations)
+        #    Wait for images to finish loading, then a final short pause
+        image_load_script = """
+            return Array.from(document.images).every(function(img) {
+                return img.complete && img.naturalHeight !== 0;
+            });
+        """
+        try:
+            img_deadline = time.time() + 5
+            while time.time() < img_deadline:
+                images_ready = driver.execute_script(image_load_script)
+                if images_ready:
+                    logger.info('[SafePreview] All images loaded')
+                    break
+                time.sleep(0.5)
+        except Exception:
+            pass
+
+        # Final settle — let animations/transitions finish
+        time.sleep(1.5)
 
     def _capture_via_selenium(self, url, timeout):
         """Capture screenshot using Docker Selenium container (sandboxed)."""
@@ -143,9 +263,12 @@ class SafePreview:
             logger.info('[SafePreview] Loading via Docker sandbox: %s', url[:80])
             start = time.time()
             driver.get(url)
-            time.sleep(2)
+
+            # Smart wait: readyState + network idle + images loaded
+            self._wait_for_page_ready(driver, timeout)
 
             elapsed = round(time.time() - start, 2)
+            logger.info('[SafePreview] Page fully loaded in %.2fs, capturing screenshot', elapsed)
             screenshot = driver.get_screenshot_as_base64()
 
             return {
@@ -167,11 +290,30 @@ class SafePreview:
                 except Exception:
                     pass
 
-    def _capture_via_api(self, url, timeout):
-        """Capture screenshot using remote API (fallback when Docker is not running)."""
+    def _capture_via_api(self, url, timeout, force_fresh=False):
+        """Capture screenshot using remote API (fallback when Docker is not running).
+        
+        Args:
+            url: The target URL to screenshot.
+            timeout: Request timeout in seconds.
+            force_fresh: If True, busts thum.io cache with a nonce and uses
+                         the longer-wait URL template.
+        """
         try:
-            api_url = THUM_IO_URL.format(w=SCREENSHOT_WIDTH, h=SCREENSHOT_HEIGHT, url=url)
-            logger.info('[SafePreview] Fallback: remote API screenshot for %s', url[:80])
+            target_url = url
+
+            if force_fresh:
+                # Add cache-busting nonce to force a completely fresh capture
+                nonce = str(int(time.time() * 1000))
+                separator = '&' if '?' in url else '?'
+                target_url = f'{url}{separator}_ss={nonce}'
+                template = THUM_IO_URL_FRESH
+                logger.info('[SafePreview] API FRESH capture for %s', url[:80])
+            else:
+                template = THUM_IO_URL
+                logger.info('[SafePreview] API capture for %s', url[:80])
+
+            api_url = template.format(w=SCREENSHOT_WIDTH, h=SCREENSHOT_HEIGHT, url=target_url)
             start = time.time()
 
             req = urllib.request.Request(api_url, headers={
@@ -183,7 +325,8 @@ class SafePreview:
             elapsed = round(time.time() - start, 2)
             screenshot_b64 = base64.b64encode(image_data).decode('utf-8')
 
-            logger.info('[SafePreview] API screenshot captured in %.2fs', elapsed)
+            logger.info('[SafePreview] API screenshot captured in %.2fs (%s)',
+                        elapsed, 'fresh' if force_fresh else 'cached ok')
 
             return {
                 'success': True,

@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 import os
+import glob
 
 # Load environment variables from .env file
 load_dotenv()
@@ -15,7 +16,7 @@ from blacklist import BlacklistChecker
 from ml_predictor import MLPredictor
 from db import Database
 from safe_preview import SafePreview
-import os
+
 import time
 import logging
 from datetime import datetime
@@ -33,12 +34,14 @@ CORS(app)  # Allow requests from Chrome extension
 
 # ─── Initialize components ───
 
-# Blacklist: use the user-provided CSV in the extension root directory
-blacklist_csv = os.path.join(os.path.dirname(__file__), '..', 'blacklist_dataset_cleaned (2).csv')
-if not os.path.exists(blacklist_csv):
-    # Fallback: check backend directory
-    blacklist_csv = os.path.join(os.path.dirname(__file__), 'blacklist.csv')
-blacklist = BlacklistChecker(blacklist_csv if os.path.exists(blacklist_csv) else None)
+# Blacklist: search multiple locations for the CSV
+blacklist_csv = None
+for search_dir in [os.path.dirname(__file__), os.path.join(os.path.dirname(__file__), '..'), os.getcwd()]:
+    candidates = glob.glob(os.path.join(search_dir, 'blacklist_dataset_cleaned*csv'))
+    if candidates:
+        blacklist_csv = candidates[0]
+        break
+blacklist = BlacklistChecker(blacklist_csv)
 
 ml_model = MLPredictor()       # Loads rf_phishing_model.pkl automatically
 db = Database()                # MongoDB connection (gracefully degrades)
@@ -64,27 +67,42 @@ def apply_ml_and_blacklist(item):
         logger.warning('  BLACKLISTED: %s (matched: %s)', url[:80], bl_result['matched'])
         return item
 
-    # 2) ML prediction (blended with heuristic score)
+    # 2) Trusted domain override — if heuristic already identified this as a
+    #    known-good domain (github.com, youtube.com, etc.), skip ML.
+    #    The ML model doesn't know about domain reputation and would
+    #    flag subdomains like resources.github.com due to URL structure.
+    heuristic_score = item.get('risk_score', 0)
+    is_trusted = item.get('features', {}).get('is_trusted_domain', False)
+
+    if is_trusted and heuristic_score <= 5:
+        item['classification'] = 'safe'
+        item['risk_score'] = heuristic_score
+        item['whitelisted'] = True
+        logger.info('  [SAFE] %s | trusted domain (whitelist override)', url[:60])
+        return item
+
+    # 3) ML prediction (blended with heuristic score)
     ml_result = ml_model.predict(url)
     item['ml'] = ml_result
 
     if ml_result.get('ml_available'):
-        heuristic_score = item.get('risk_score', 0)
         phishing_prob = ml_result['ml_phishing_probability']
 
         # Convert ML probability to 0-100 score
         ml_score = phishing_prob * 100
 
-        # Blend: 40% heuristic + 60% ML (ML gets more weight since it's trained)
-        blended_score = (heuristic_score * 0.4) + (ml_score * 0.6)
+        # Blend: 60% heuristic + 40% ML
+        # Heuristic gets more weight because ML tends to over-flag normal subdomains
+        blended_score = (heuristic_score * 0.6) + (ml_score * 0.4)
         item['risk_score'] = round(blended_score, 1)
         item['heuristic_score'] = heuristic_score
         item['ml_score'] = round(ml_score, 1)
 
         # Reclassify based on blended score
-        if blended_score > 55:
+        # Higher thresholds to reduce false positives on legitimate sites
+        if blended_score > 70:
             item['classification'] = 'malicious'
-        elif blended_score > 20:
+        elif blended_score > 35:
             item['classification'] = 'suspicious'
         else:
             item['classification'] = 'safe'
@@ -106,14 +124,22 @@ def recalculate_summary(results):
         results['summary']['safe'] = sum(1 for i in all_items if i['classification'] == 'safe')
         results['summary']['suspicious'] = sum(1 for i in all_items if i['classification'] == 'suspicious')
         results['summary']['malicious'] = sum(1 for i in all_items if i['classification'] == 'malicious')
+
+        n_suspicious = results['summary']['suspicious']
+        n_malicious = results['summary']['malicious']
         scores = [i['risk_score'] for i in all_items]
         avg_score = sum(scores) / len(scores)
         max_score = max(scores)
-        weighted = (avg_score * 0.4) + (max_score * 0.6)
+
+        # Page-level risk: mostly average, max only as a minor bump.
+        # This prevents 1 borderline link from flagging an entire page.
+        weighted = (avg_score * 0.7) + (max_score * 0.3)
         results['summary']['risk_score'] = round(weighted, 1)
-        if weighted > 55:
+
+        # Page-level classification — requires real threats, not just borderline links
+        if n_malicious >= 2 or (n_malicious >= 1 and weighted > 60):
             results['summary']['overall_risk'] = 'malicious'
-        elif weighted > 20:
+        elif n_malicious >= 1 or (n_suspicious >= 3 and weighted > 25) or weighted > 30:
             results['summary']['overall_risk'] = 'suspicious'
         else:
             results['summary']['overall_risk'] = 'safe'
@@ -245,7 +271,7 @@ def preview():
             return jsonify({'error': 'Missing "url" field'}), 400
 
         url = data['url']
-        timeout = data.get('timeout', 15)
+        timeout = data.get('timeout', 30)
         logger.info('PREVIEW URL: %s', url[:80])
 
         result = safe_preview.capture(url, timeout=timeout)
@@ -260,16 +286,12 @@ if __name__ == '__main__':
     print('  [*] ScamShield Backend Server')
     print('=' * 55)
 
-    # --- Automatic Docker Startup (Optional Enhancement for FYP) ---
-    # If docker-compose exists, try to start Selenium in the background
-    try:
-        import subprocess
-        print('  [Docker] Checking for Docker services...')
-        subprocess.Popen(['docker-compose', 'up', '-d', 'selenium'], 
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print('  [Docker] Attempting background start (Selenium sandbox)...')
-    except Exception:
-        print('  [Docker] Docker not available locally. Using remote fallback.')
+    # Check if running inside Docker
+    in_docker = os.path.exists('/.dockerenv')
+    if in_docker:
+        print('  [Docker] Running inside Docker container')
+    else:
+        print('  [Local] Running locally — start Docker separately with: docker compose up -d')
 
     print(f'  ML Model:     {"[OK] Loaded" if ml_model.available else "[X] Not available"}')
     print(f'  Blacklist:    {blacklist.size} entries')

@@ -3,6 +3,8 @@
 
 'use strict';
 
+// Backend URL — update this after deploying to your VPS
+// Example: 'http://YOUR_VPS_IP:5000' or 'https://your-domain.com'
 const BACKEND_URL = 'http://localhost:5000';
 
 // ─── Store crawl results per tab ───
@@ -29,7 +31,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         chrome.tabs.sendMessage(Number(tabId), {
           type: 'SCAN_RESULT',
           payload: analysisResult,
-        }).catch(() => {}); // Ignore if tab closed
+        }).catch(() => { }); // Ignore if tab closed
       })
       .catch((err) => {
         console.warn('[ScamShield] Backend unavailable, using raw data:', err.message);

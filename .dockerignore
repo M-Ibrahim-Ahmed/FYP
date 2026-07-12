@@ -1,0 +1,15 @@
+.git
+.gitignore
+.vscode
+__pycache__
+*.pyc
+*.ipynb
+icons/
+*.md
+*.c
+node_modules/
+backend/tests/
+backend/benchmark*
+backend/__pycache__/
+backend/.env
+backend/venv/

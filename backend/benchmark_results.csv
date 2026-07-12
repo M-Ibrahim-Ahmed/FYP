@@ -1,0 +1,23 @@
+Metric,Value
+Accuracy (%),99.99
+Precision - Weighted (%),99.99
+Recall - Weighted (%),99.99
+F1-Score - Weighted (%),99.99
+AUC-ROC (%),100.00
+Precision - Phishing (%),99.98
+Recall - Phishing (%),99.99
+F1-Score - Phishing (%),99.99
+Response Time - Avg (ms),80.827
+Response Time - P95 (ms),100.321
+Feature Extraction Time (ms),0.159
+ML Prediction Time (ms),87.315
+Throughput (URLs/sec),"42,200"
+Memory RSS (MB),213.2
+Model Size (MB),4.45
+Total Samples,101218
+Features,16
+True Positives,12735
+False Negatives,1
+False Positives,2
+True Negatives,7506
+Real-World Accuracy (%),100.0

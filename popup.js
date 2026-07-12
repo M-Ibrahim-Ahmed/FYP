@@ -5,26 +5,26 @@
 
 document.addEventListener('DOMContentLoaded', () => {
   // ─── Element references ───
-  const statusEl      = document.getElementById('status');
-  const scanBtn       = document.getElementById('scanBtn');
-  const tabBtns       = document.querySelectorAll('.tab-btn');
-  const tabPanels     = document.querySelectorAll('.tab-panel');
-  const statLinks     = document.getElementById('stat-links');
-  const statForms     = document.getElementById('stat-forms');
-  const statImages    = document.getElementById('stat-images');
+  const statusEl = document.getElementById('status');
+  const scanBtn = document.getElementById('scanBtn');
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabPanels = document.querySelectorAll('.tab-panel');
+  const statLinks = document.getElementById('stat-links');
+  const statForms = document.getElementById('stat-forms');
+  const statImages = document.getElementById('stat-images');
   const statRedirects = document.getElementById('stat-redirects');
-  const statIframes   = document.getElementById('stat-iframes');
-  const pageTitleEl   = document.getElementById('page-title');
-  const pageUrlEl     = document.getElementById('page-url');
-  const riskBanner    = document.getElementById('risk-banner');
-  const riskLabel     = document.getElementById('risk-label');
-  const riskScore     = document.getElementById('risk-score');
-  const riskDetails   = document.getElementById('risk-details');
+  const statIframes = document.getElementById('stat-iframes');
+  const pageTitleEl = document.getElementById('page-title');
+  const pageUrlEl = document.getElementById('page-url');
+  const riskBanner = document.getElementById('risk-banner');
+  const riskLabel = document.getElementById('risk-label');
+  const riskScore = document.getElementById('risk-score');
+  const riskDetails = document.getElementById('risk-details');
   const previewOverlay = document.getElementById('preview-overlay');
-  const previewClose   = document.getElementById('preview-close');
-  const previewUrlEl   = document.getElementById('preview-url');
-  const previewBody    = document.getElementById('preview-body');
-  const exportBtn      = document.getElementById('exportBtn');
+  const previewClose = document.getElementById('preview-close');
+  const previewUrlEl = document.getElementById('preview-url');
+  const previewBody = document.getElementById('preview-body');
+  const exportBtn = document.getElementById('exportBtn');
 
   let activeTabId = null;
   let activeTabUrl = null;
@@ -159,11 +159,11 @@ document.addEventListener('DOMContentLoaded', () => {
     showRiskBanner(summary.overall_risk, summary.risk_score, summary);
 
     // Update stats
-    statLinks.textContent     = (data.links || []).length;
-    statForms.textContent     = (data.forms || []).length;
-    statImages.textContent    = (data.images || []).length;
+    statLinks.textContent = (data.links || []).length;
+    statForms.textContent = (data.forms || []).length;
+    statImages.textContent = (data.images || []).length;
     statRedirects.textContent = (data.redirects || []).length;
-    statIframes.textContent   = (data.iframes || []).length;
+    statIframes.textContent = (data.iframes || []).length;
 
     // Render each panel with classification
     renderAnalyzedLinks(data.links || []);
@@ -177,11 +177,11 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderRawDashboard(data) {
     hideRiskBanner();
 
-    statLinks.textContent     = data.counts?.links ?? (data.links || []).length;
-    statForms.textContent     = data.counts?.forms ?? (data.forms || []).length;
-    statImages.textContent    = data.counts?.images ?? (data.images || []).length;
+    statLinks.textContent = data.counts?.links ?? (data.links || []).length;
+    statForms.textContent = data.counts?.forms ?? (data.forms || []).length;
+    statImages.textContent = data.counts?.images ?? (data.images || []).length;
     statRedirects.textContent = (data.counts?.metaRedirects ?? 0) + (data.counts?.jsRedirects ?? 0);
-    statIframes.textContent   = data.counts?.iframes ?? (data.iframes || []).length;
+    statIframes.textContent = data.counts?.iframes ?? (data.iframes || []).length;
 
     renderRawLinks(data.links || []);
     renderRawForms(data.forms || []);
@@ -218,7 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="item-title">${escapeHtml(item.text || '[no text]')}</span>
             ${riskBadge(item.classification, item.risk_score)}
             ${item.blacklisted?.is_blacklisted ? '<span class="badge badge-danger">BLACKLISTED</span>' : ''}
-            ${item.classification !== 'safe' ? `<button class="btn-preview" data-url="${escapeAttr(item.url)}">🔍 Preview</button>` : ''}
+            <button class="btn-preview" data-url="${escapeAttr(item.url)}">🔍 Preview</button>
           </div>
           <div class="item-url">${escapeHtml(truncate(item.url, 65))}</div>
         </div>
@@ -494,12 +494,12 @@ document.addEventListener('DOMContentLoaded', () => {
   function openSafePreview(url) {
     previewOverlay.style.display = 'flex';
     previewUrlEl.textContent = url;
-    previewBody.innerHTML = '<div class="empty-state"><span class="empty-icon" style="animation: pulse 1.5s infinite">📸</span><p>Capturing safe screenshot…<br><small>This may take a few seconds</small></p></div>';
+    previewBody.innerHTML = '<div class="empty-state"><span class="empty-icon" style="animation: pulse 1.5s infinite">📸</span><p>Capturing safe screenshot…<br><small>Waiting for full page load (up to 30s)</small></p></div>';
 
     fetch(`${BACKEND_URL}/preview`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, timeout: 15 }),
+      body: JSON.stringify({ url, timeout: 30 }),
     })
       .then((res) => res.json())
       .then((result) => {

@@ -17,9 +17,10 @@ RUN pip install --no-cache-dir --timeout=300 --retries=3 -r requirements.txt
 COPY backend/ .
 
 # Copy model and data files from project root
-COPY rf_phishing_model.pkl .
-COPY url_features_extracted1.csv .
-COPY ["blacklist_dataset_cleaned (2).csv", "."]
+# Paths are relative to docker-compose build context (project root)
+COPY models/rf_phishing_model.pkl ./rf_phishing_model.pkl
+COPY datasets/url_features_extracted1.csv ./url_features_extracted1.csv
+COPY datasets/blacklist_dataset_cleaned.csv ./blacklist_dataset_cleaned.csv
 
 EXPOSE 5000
 

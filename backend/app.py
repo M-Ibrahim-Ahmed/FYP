@@ -1,6 +1,5 @@
 # app.py — ScamShield Flask Backend
 # 3-stage pipeline: Blacklist -> Heuristics -> ML Model
-# With MongoDB persistence, scan history, stats, and safe preview.
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -14,12 +13,12 @@ load_dotenv()
 from analyzer import analyze_page_data, classify_url
 from blacklist import BlacklistChecker
 from ml_predictor import MLPredictor
-from db import Database
 from safe_preview import SafePreview
 
 import time
 import logging
 from datetime import datetime
+from collections import defaultdict
 
 # ─── Logging setup ───
 logging.basicConfig(
@@ -36,16 +35,38 @@ CORS(app)  # Allow requests from Chrome extension
 
 # Blacklist: search multiple locations for the CSV
 blacklist_csv = None
-for search_dir in [os.path.dirname(__file__), os.path.join(os.path.dirname(__file__), '..'), os.getcwd()]:
+search_paths = [
+    os.path.dirname(__file__),  # backend/
+    os.path.join(os.path.dirname(__file__), '..'),  # project root
+    os.path.join(os.path.dirname(__file__), '..', 'datasets'),  # project root/datasets
+    os.getcwd(),
+]
+for search_dir in search_paths:
     candidates = glob.glob(os.path.join(search_dir, 'blacklist_dataset_cleaned*csv'))
     if candidates:
         blacklist_csv = candidates[0]
         break
 blacklist = BlacklistChecker(blacklist_csv)
 
-ml_model = MLPredictor()       # Loads rf_phishing_model.pkl automatically
-db = Database()                # MongoDB connection (gracefully degrades)
-safe_preview = SafePreview()   # Selenium screenshot service
+# ML Model: specify model path in models/ folder
+model_path = None
+model_search_paths = [
+    os.path.join(os.path.dirname(__file__), '..', 'models', 'rf_phishing_model.pkl'),  # ../models/
+    os.path.join(os.path.dirname(__file__), 'rf_phishing_model.pkl'),  # backend/
+    os.path.join(os.getcwd(), 'models', 'rf_phishing_model.pkl'),  # cwd/models/
+]
+for path in model_search_paths:
+    if os.path.exists(path):
+        model_path = path
+        break
+ml_model = MLPredictor(model_path=model_path)
+
+# Safe Preview service
+preview_service = SafePreview()
+
+# Simple in-memory storage for scan history (for demo purposes)
+# In production, use a proper database
+scan_history = []
 
 
 def apply_ml_and_blacklist(item):
@@ -161,8 +182,6 @@ def health():
         'version': '1.0',
         'blacklist_size': blacklist.size,
         'ml_model_loaded': ml_model.available,
-        'database_connected': db.is_available,
-        'safe_preview_available': safe_preview.is_available,
         'timestamp': time.time(),
     })
 
@@ -199,10 +218,16 @@ def analyze():
                     summary.get('safe', 0), summary.get('suspicious', 0),
                     summary.get('malicious', 0), summary.get('risk_score', 0))
 
-        # Persist to MongoDB (non-blocking — errors won't affect response)
-        scan_id = db.save_scan(results)
-        if scan_id:
-            results['scan_id'] = scan_id
+        # Store in history (keep last 100 scans)
+        scan_record = {
+            'page_url': page_url,
+            'scanned_at': datetime.utcnow().isoformat(),
+            'summary': summary,
+            'total_urls': total_urls,
+        }
+        scan_history.insert(0, scan_record)
+        if len(scan_history) > 100:
+            scan_history.pop()
 
         return jsonify(results)
     except Exception as e:
@@ -236,35 +261,9 @@ def check_single():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/history', methods=['GET'])
-def history():
-    """Get paginated scan history from MongoDB."""
-    try:
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-        per_page = min(per_page, 100)  # Cap at 100
-
-        result = db.get_history(page=page, per_page=per_page)
-        return jsonify(result)
-    except Exception as e:
-        logger.error('History error: %s', str(e))
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/stats', methods=['GET'])
-def stats():
-    """Get aggregate scan statistics from MongoDB."""
-    try:
-        result = db.get_stats()
-        return jsonify(result)
-    except Exception as e:
-        logger.error('Stats error: %s', str(e))
-        return jsonify({'error': str(e)}), 500
-
-
 @app.route('/preview', methods=['POST'])
 def preview():
-    """Capture a safe screenshot of a suspicious URL using the sandboxed browser."""
+    """Safe preview of a suspicious URL (sandboxed screenshot)."""
     try:
         data = request.get_json()
         if not data or 'url' not in data:
@@ -272,12 +271,81 @@ def preview():
 
         url = data['url']
         timeout = data.get('timeout', 30)
-        logger.info('PREVIEW URL: %s', url[:80])
 
-        result = safe_preview.capture(url, timeout=timeout)
+        logger.info('PREVIEW REQUEST: %s', url[:80])
+        result = preview_service.capture(url, timeout=timeout)
+
+        if result['success']:
+            logger.info('PREVIEW SUCCESS: %s (method: %s, load_time: %.2fs)',
+                        url[:60], result.get('method', '?'), result.get('load_time', 0))
+        else:
+            logger.warning('PREVIEW FAILED: %s | error: %s',
+                           url[:60], result.get('error', 'Unknown'))
+
         return jsonify(result)
     except Exception as e:
         logger.error('Preview error: %s', str(e))
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/stats', methods=['GET'])
+def stats():
+    """Get aggregate statistics from scan history."""
+    try:
+        if not scan_history:
+            return jsonify({
+                'available': False,
+                'total_scans': 0,
+                'total_urls_analyzed': 0,
+                'blacklisted_urls': 0,
+                'classifications': {'safe': 0, 'suspicious': 0, 'malicious': 0},
+            })
+
+        total_scans = len(scan_history)
+        total_urls = sum(s.get('total_urls', 0) for s in scan_history)
+
+        classifications = defaultdict(int)
+        for scan in scan_history:
+            summary = scan.get('summary', {})
+            classifications['safe'] += summary.get('safe', 0)
+            classifications['suspicious'] += summary.get('suspicious', 0)
+            classifications['malicious'] += summary.get('malicious', 0)
+
+        # Approximate blacklisted count (we don't store detailed URL-level data in history)
+        blacklisted_urls = classifications['malicious']  # rough estimate
+
+        return jsonify({
+            'available': True,
+            'total_scans': total_scans,
+            'total_urls_analyzed': total_urls,
+            'blacklisted_urls': blacklisted_urls,
+            'classifications': dict(classifications),
+        })
+    except Exception as e:
+        logger.error('Stats error: %s', str(e))
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/history', methods=['GET'])
+def history():
+    """Get recent scan history."""
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
+
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+
+        scans = scan_history[start_idx:end_idx]
+
+        return jsonify({
+            'scans': scans,
+            'total': len(scan_history),
+            'page': page,
+            'per_page': per_page,
+        })
+    except Exception as e:
+        logger.error('History error: %s', str(e))
         return jsonify({'error': str(e)}), 500
 
 
@@ -285,18 +353,9 @@ if __name__ == '__main__':
     print('=' * 55)
     print('  [*] ScamShield Backend Server')
     print('=' * 55)
-
-    # Check if running inside Docker
-    in_docker = os.path.exists('/.dockerenv')
-    if in_docker:
-        print('  [Docker] Running inside Docker container')
-    else:
-        print('  [Local] Running locally — start Docker separately with: docker compose up -d')
-
     print(f'  ML Model:     {"[OK] Loaded" if ml_model.available else "[X] Not available"}')
     print(f'  Blacklist:    {blacklist.size} entries')
-    print(f'  Database:     {"[OK] Connected" if db.is_available else "[!] Not connected (running without DB)"}')
-    print(f'  Safe Preview: {"[OK] Available" if safe_preview.is_available else "[!] Not available"}')
+    print(f'  Preview:      {"[OK] Docker Selenium" if preview_service.is_docker_connected else "[OK] API fallback"}')
     print(f'  Server:       http://localhost:5000')
     print('=' * 55)
     app.run(host='0.0.0.0', port=5000, debug=True)

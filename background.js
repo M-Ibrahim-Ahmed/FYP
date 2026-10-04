@@ -5,7 +5,7 @@
 
 // Backend URL — update this after deploying to your VPS
 // Example: 'http://YOUR_VPS_IP:5000' or 'https://your-domain.com'
-const BACKEND_URL = 'http://localhost:5000';
+const BACKEND_URL = 'https://fyp-production-d637.up.railway.app';
 
 // ─── Store crawl results per tab ───
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

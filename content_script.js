@@ -499,7 +499,7 @@
         overlay.querySelector('#ss-load-preview').addEventListener('click', () => {
           const area = overlay.querySelector('#ss-preview-area');
           area.innerHTML = '<p style="color:#a5b4fc; font-size:12px;">Loading safe preview… waiting for full page load</p>';
-          fetch('http://localhost:5000/preview', {
+          fetch('https://fyp-production-d637.up.railway.app/preview', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url, timeout: 30 }),

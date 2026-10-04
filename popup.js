@@ -29,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let activeTabId = null;
   let activeTabUrl = null;
   let currentScanData = null;  // Stores the latest scan data for export
-  const BACKEND_URL = 'http://localhost:5000';
+  const BACKEND_URL = 'https://fyp-production-d637.up.railway.app';
 
   // ─── Tab switching ───
   tabBtns.forEach((btn) => {

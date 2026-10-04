@@ -7,6 +7,22 @@
 // Example: 'http://YOUR_VPS_IP:5000' or 'https://your-domain.com'
 const BACKEND_URL = 'https://fyp-production-d637.up.railway.app';
 
+// ─── Reload content scripts on extension install/update ───
+chrome.runtime.onInstalled.addListener(() => {
+  // Inject content script into all existing tabs when extension updates
+  chrome.tabs.query({}, (tabs) => {
+    tabs.forEach((tab) => {
+      // Skip chrome:// and extension pages
+      if (tab.url && !tab.url.startsWith('chrome://') && !tab.url.startsWith('chrome-extension://')) {
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['content_script.js'],
+        }).catch(() => {}); // Ignore errors for restricted pages
+      }
+    });
+  });
+});
+
 // ─── Store crawl results per tab ───
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || !message.type) return;
